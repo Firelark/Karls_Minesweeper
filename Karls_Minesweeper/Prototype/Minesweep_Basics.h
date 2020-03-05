@@ -36,11 +36,21 @@ namespace kms
         return offset;
     }
 	
-	struct CleardRange
+	struct ClearedRange
 	{
-		unsigned first = 0;
-		unsigned last = 0;
+		unsigned begin = 0;
+		unsigned end = 0;
 	};
+
+	inline auto begin(const ClearedRange& r)
+	{
+		return r.begin;
+	}
+
+	inline auto end(const ClearedRange& r)
+	{
+		return r.end;
+	}
 
 	using Tile_t = int;
 	using TilesVector_t = std::vector<Tile_t>;
