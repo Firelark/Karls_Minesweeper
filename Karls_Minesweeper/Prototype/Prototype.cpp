@@ -12,6 +12,7 @@
 #include <ctime>
 
 #include "Minesweep_Basics.h"
+#include "ScanlineSweep.h"
 
 namespace kms
 {
@@ -129,10 +130,12 @@ namespace kms
         int col = 0;
         uint16_t idx = 0;
         std::for_each(tiles_begin, tiles_end, [&](int val) {
-            if (std::binary_search(visidx_begin, visidx_end, idx++))
+            if (*(visidx_begin + idx) == 1)
                 PrintTile(val, true);
             else
                 std::cout << "[ ]";
+
+            ++idx;
 
             if (++col == board_size.width)
             {
@@ -177,31 +180,36 @@ namespace kms
 
     void Play(const Size2D& board_size, const kms::TilesVector_t& tiles)
     {
-        using index_type = uint16_t;
+        using tile_state_t = uint16_t;
 
-        if (tiles.size() > std::numeric_limits<index_type>::max())
+        if (tiles.size() > std::numeric_limits<tile_state_t>::max())
             throw(std::domain_error("Too many tiles!"));
 
-        std::vector<index_type> visited_tiles_indices;
-        visited_tiles_indices.reserve(tiles.size());
+        std::vector<tile_state_t> tile_states(tiles.size(), 0);
+
+        auto fn_is_cleared = [&](unsigned offset) { 
+            return tile_states.at(offset) != 0;
+        };
+
+
+        auto fn_report_clear_range = [&](const ClearedRange& cleared_range) {
+            auto begin = tile_states.begin() + cleared_range.begin;
+            auto end = tile_states.begin() + cleared_range.end;
+            std::fill(begin, end, 1);
+        };
 
         system("cls");
-        PrintBoard_VisitedTiles(board_size, tiles.begin(), tiles.end(), visited_tiles_indices.begin(), visited_tiles_indices.end());
+        PrintBoard_VisitedTiles(board_size, tiles.begin(), tiles.end(), tile_states.begin(), tile_states.end());
+        std::cout << "\n------------------------------------\n";
+        PrintBoard(board_size, tiles.begin(), tiles.end());
 
         bool game_over = false;
 
         while (!game_over)
         {
             auto position = GetPosition(board_size);
-            auto index = static_cast<uint16_t>(GetOffsetIndex(board_size, position));
-            auto vistile_begin = visited_tiles_indices.begin();
-            auto vistile_end = visited_tiles_indices.end();
 
-            if (std::binary_search(vistile_begin, vistile_end, index))
-            {
-                std::cout << "Already visited that tile!\n";
-                continue;
-            }
+            ScanlineSweep(board_size, position, tiles, fn_is_cleared, fn_report_clear_range);
 
             auto tile_value = StepOnTile(board_size, position, tiles);
 
@@ -213,11 +221,10 @@ namespace kms
                 return;
             }
 
-            auto lower_bound = std::lower_bound(vistile_begin, vistile_end, index);
-            visited_tiles_indices.insert(lower_bound, index);
-
             system("cls");
-            PrintBoard_VisitedTiles(board_size, tiles.begin(), tiles.end(), visited_tiles_indices.begin(), visited_tiles_indices.end());
+            PrintBoard_VisitedTiles(board_size, tiles.begin(), tiles.end(), tile_states.begin(), tile_states.end());
+            std::cout << "\n------------------------------------\n";
+            PrintBoard(board_size, tiles.begin(), tiles.end());
         }
     }
 }
