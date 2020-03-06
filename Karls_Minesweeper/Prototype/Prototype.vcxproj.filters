@@ -32,5 +32,8 @@
     <ClInclude Include="Minesweep_Basics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="FloodFill.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

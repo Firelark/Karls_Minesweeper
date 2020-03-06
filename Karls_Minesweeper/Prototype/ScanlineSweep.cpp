@@ -7,25 +7,49 @@
 
 namespace kms
 {
-	enum class LineFeed
+	enum class ELineFeed
 	{
 		undefiend,
 		up,
 		down
 	};
 
-	enum class ScanDirection
+	ELineFeed OppositeFeedDirection(ELineFeed feed)
 	{
-		left,
-		right
+		switch (feed)
+		{
+		case kms::ELineFeed::up:
+			return ELineFeed::down;
+		case kms::ELineFeed::down:
+			return ELineFeed::up;
+		}
+		return ELineFeed::undefiend;
+	}
+
+	enum class ETileStatus
+	{
+		not_cleared,
+		cleared
 	};
 
 	struct ScanLine
 	{
 		Pos2D start_position;
 		unsigned magnitude = 0;
-		LineFeed feed = LineFeed::undefiend;
+		ELineFeed feed = ELineFeed::undefiend;
 	};
+
+	ScanLine CreateScanLine(const Pos2D& start_position, unsigned magnitude, ELineFeed feed, const Size2D& board_size)
+	{
+		if (start_position.x >= board_size.width || start_position.y >= board_size.height || start_position.x + magnitude > board_size.width)
+			throw(std::logic_error("Not on board"));
+
+		ScanLine scan_line;
+		scan_line.start_position = start_position;
+		scan_line.magnitude = magnitude;
+		scan_line.feed = feed;
+		return scan_line;
+	}
 
 	bool Intersect(const ScanLine& a, const ScanLine& b)
 	{
@@ -34,7 +58,8 @@ namespace kms
 		const auto bx1 = b.start_position.x;
 		const auto bx2 = b.start_position.x + b.magnitude;
 
-		return a.start_position.y == b.start_position.y && ((ax1 <= bx1 && bx1 <= ax2) || (ax1 <= bx2 && bx2 <= ax1) || (ax1 <= bx1 && bx2 >= ax2) || (bx1 <= ax1 && ax2 >= bx2));
+		return a.start_position.y == b.start_position.y &&
+			((ax1 <= bx1 && bx1 <= ax2) || (ax1 <= bx2 && bx2 <= ax1) || (ax1 <= bx1 && bx2 >= ax2) || (bx1 <= ax1 && ax2 >= bx2));
 	}
 
 	void Report(const ScanLine& scan_line, unsigned board_height, std::function<void(const ScanLine&)> report_unhandled_scanline)
@@ -42,21 +67,21 @@ namespace kms
 		if (scan_line.magnitude == 0)
 			return;
 
-		if (scan_line.feed == LineFeed::down || scan_line.feed == LineFeed::undefiend)
+		if (scan_line.feed == ELineFeed::down || scan_line.feed == ELineFeed::undefiend)
 		{
 			auto next_scan_line_down = scan_line;
-			next_scan_line_down.feed = LineFeed::down;
+			next_scan_line_down.feed = ELineFeed::down;
 			++next_scan_line_down.start_position.y;
 			if (next_scan_line_down.start_position.y < board_height)
 			{
 				report_unhandled_scanline(next_scan_line_down);
 			}
 		}
-		
-		if (scan_line.feed == LineFeed::up || scan_line.feed == LineFeed::undefiend)
+
+		if (scan_line.feed == ELineFeed::up || scan_line.feed == ELineFeed::undefiend)
 		{
 			auto next_scan_line_up = scan_line;
-			next_scan_line_up.feed = LineFeed::up;
+			next_scan_line_up.feed = ELineFeed::up;
 			if (next_scan_line_up.start_position.y != 0)
 			{
 				--next_scan_line_up.start_position.y;
@@ -65,17 +90,18 @@ namespace kms
 		}
 	}
 
-	kms::ClearedRange Scan(const ScanLine& scan_line, const Size2D& board_size, const TilesVector_t& tiles, std::function<void(const ScanLine&)> report_unhandled_scanline)
+	kms::ClearedRange Scan(const ScanLine& scan_line, const Size2D& board_size,
+		const TilesVector_t& tiles, std::function<void(const ScanLine&)> report_unhandled_scanline)
 	{
 		if (Size(board_size) == 0 || tiles.size() > std::numeric_limits<unsigned>::max())
 			throw(std::domain_error("Error: Board size is zero, or number of tiles are too big!"));
 
 		const auto start_offset = GetOffsetIndex(board_size, scan_line.start_position);
-		const auto begin_row_offset = GetOffsetIndex(board_size, {0, scan_line.start_position.y});
+		const auto begin_row_offset = GetOffsetIndex(board_size, { 0, scan_line.start_position.y });
 		const auto end_of_row_offset = begin_row_offset + board_size.width;
 		const auto largest_index = Size(board_size) - 1;
 		const auto reverse_start_offset = largest_index - start_offset;
-		auto hot_to_cold = [](Tile_t first_tile_value, Tile_t second_tile_value) 
+		auto hot_to_cold = [](Tile_t first_tile_value, Tile_t second_tile_value)
 		{
 			return first_tile_value != 0 && second_tile_value == 0;
 		};
@@ -85,7 +111,7 @@ namespace kms
 			return value != 0;
 		};
 
-		auto cleared_range = ClearedRange{start_offset, start_offset + scan_line.magnitude};
+		auto cleared_range = ClearedRange{ start_offset, start_offset + scan_line.magnitude };
 
 		auto next_scan_line = scan_line;
 
@@ -95,27 +121,28 @@ namespace kms
 			// scan to the left of the startposition to find new start position
 			auto revit_tiles_begin = tiles.rbegin() + reverse_start_offset;
 			auto revit_tiles_end = tiles.rbegin() + largest_index - begin_row_offset;
-			const auto rev_offset_of_start = static_cast<unsigned>(std::find_if(revit_tiles_begin, revit_tiles_end, hot) - tiles.rbegin());
+			const auto rev_offset_of_start =
+				static_cast<unsigned>(std::find_if(revit_tiles_begin, revit_tiles_end, hot) - tiles.rbegin());
 			const auto new_start_offset = largest_index - rev_offset_of_start;
-			
+
 			const auto delta = start_offset - new_start_offset;
 			cleared_range.begin = new_start_offset;
 			cleared_range.end = new_start_offset + delta + scan_line.magnitude;
 
-			if (scan_line.feed != LineFeed::undefiend)
+			if (scan_line.feed != ELineFeed::undefiend)
 			{
 				// if line feed of the current scan_line is defined
 				// then create a new separate next scan line for the 
 				// scan line to the left of the starting position
 				auto first_next_scan_line = scan_line;
-				first_next_scan_line.feed = LineFeed::undefiend;
+				first_next_scan_line.feed = ELineFeed::undefiend;
 				first_next_scan_line.start_position.x -= delta;
 				first_next_scan_line.magnitude = delta;
 
 				// report the left scan line separatly
 				Report(first_next_scan_line, board_size.height, report_unhandled_scanline);
 			}
-			else 
+			else
 			{
 				// if line feed is undefined then the
 				// scan line to the left of the starting position 
@@ -143,12 +170,12 @@ namespace kms
 
 			next_scan_line.magnitude -= delta;
 
-			if (it_curr_tile == it_end_of_scan_line && next_scan_line.feed == LineFeed::undefiend)
+			if (it_curr_tile == it_end_of_scan_line && next_scan_line.feed == ELineFeed::undefiend)
 				break;
 
 			// report the next scan line
 			Report(next_scan_line, board_size.height, report_unhandled_scanline);
-			
+
 			// NEW SCAN LINE: new start postion and initial magnitude of the next scan line 
 			it_curr_tile = std::adjacent_find(it_curr_tile, it_end_of_scan_line, hot_to_cold);
 			next_scan_line.start_position.x = static_cast<unsigned>(it_curr_tile - (tiles.begin() + begin_row_offset));
@@ -170,11 +197,12 @@ namespace kms
 
 			const auto added_magnitude = static_cast<unsigned>(it_curr_tile - it_begin_of_current_scan_line);
 
-			if (next_scan_line.feed != LineFeed::undefiend)
+			if (next_scan_line.feed != ELineFeed::undefiend)
 			{
 				Report(next_scan_line, board_size.height, report_unhandled_scanline);
 
-				next_scan_line.start_position.x = static_cast<unsigned>(it_begin_of_current_scan_line - (tiles.begin() + begin_row_offset));
+				next_scan_line.start_position.x =
+					static_cast<unsigned>(it_begin_of_current_scan_line - (tiles.begin() + begin_row_offset));
 				next_scan_line.magnitude = added_magnitude;
 			}
 			else
@@ -183,7 +211,7 @@ namespace kms
 				next_scan_line.magnitude += added_magnitude;
 			}
 
-			next_scan_line.feed = LineFeed::undefiend;
+			next_scan_line.feed = ELineFeed::undefiend;
 			Report(next_scan_line, board_size.height, report_unhandled_scanline);
 
 			cleared_range.end += added_magnitude;
@@ -191,10 +219,188 @@ namespace kms
 
 		return cleared_range;
 	}
+
+
+	void CacheNextScanline(const ScanLine& scan_line, const Size2D& board_size, std::function<void(const ScanLine&)> fn_cache_scanline)
+	{
+		if (scan_line.start_position.x >= board_size.width || scan_line.start_position.y >= board_size.height || scan_line.start_position.x + scan_line.magnitude > board_size.width)
+			throw(std::logic_error("Invalid Position!"));
+
+		fn_cache_scanline(scan_line);
+	}
+
+	void Cache_New_ScanLine_Next_Row_Reverse_Feed(const Pos2D& curr_position, unsigned magnitude, ELineFeed curr_feed, const Size2D& board_size, std::function<void(const ScanLine&)> fn_cache)
+	{
+		auto create_scanline = [&](const Pos2D& start_position, unsigned magnitude, ELineFeed line_feed) { return CreateScanLine(start_position, magnitude, line_feed, board_size); };
+
+		const auto opposite_feed_direction = OppositeFeedDirection(curr_feed);
+		if ((opposite_feed_direction == ELineFeed::up || opposite_feed_direction == ELineFeed::undefiend) && curr_position.y > 0)
+		{
+			auto next_start_position = Pos2D{ curr_position.x, curr_position.y - 1 };
+			auto next_scanline = create_scanline(next_start_position, magnitude, opposite_feed_direction);
+			fn_cache(next_scanline);
+		}
+		
+		if ((opposite_feed_direction == ELineFeed::down || opposite_feed_direction == ELineFeed::undefiend) && curr_position.y < board_size.height -1)
+		{
+			auto next_start_position = Pos2D{curr_position.x, curr_position.y + 1 };
+			auto next_scanline = create_scanline(next_start_position, magnitude, opposite_feed_direction);
+			fn_cache(next_scanline);
+		}	
+	}
+
+
+	// Adjust the start of the scanline to hit the next hot tile, or first tile of the row to the right of the start_position 
+	// cache any scanline that results from a possible expansion to the left
+	ScanLine AdjustScanlineStart(const ScanLine& scanline, const Size2D& board_size, 
+		std::function<int(const Pos2D&)> fn_get_tile_data, 
+		std::function<void(const ScanLine&)> fn_cache)
+	{
+		auto is_tile_hot_at = [&](const Pos2D& position) { return fn_get_tile_data(position); };
+
+		// start position is not at the start of the row and the tile value is cold tile (zero value)
+		// expand scanline to the left until it hits (and includes) the next hot tile (non-zero value) 
+		// or until the beginning of the row is hit.
+
+		// also record the next_scanline starting at the new start position and have a magnitude equal
+		// to the old_start_position - new_start_position.
+
+		auto adjusted_scanline = scanline;
+		auto extension_magnitude = decltype(scanline.magnitude){0};
+		for (; adjusted_scanline.start_position.x >= 0; --adjusted_scanline.start_position.x)
+		{
+			// if tile value is hot
+			if (is_tile_hot_at(adjusted_scanline.start_position))
+				break;
+		}
+
+		extension_magnitude = scanline.start_position.x - adjusted_scanline.start_position.x;
+		
+		if (extension_magnitude)
+			Cache_New_ScanLine_Next_Row_Reverse_Feed(adjusted_scanline.start_position, extension_magnitude, adjusted_scanline.feed, board_size, fn_cache);
+
+		adjusted_scanline.magnitude += extension_magnitude;
+		return adjusted_scanline;
+	}
+
+	// Adjust the scanlines magnitude possibly extending it to the right cache any scanlines that may result from this
+	ScanLine AdjustScanlineMagnitude(const ScanLine& scanline, const Size2D& board_size,
+			std::function<int(const Pos2D&)> fn_get_tile_data,
+			std::function<void(const ScanLine&)> fn_cache)
+	{
+		auto is_tile_hot_at = [&](const Pos2D& position) { return fn_get_tile_data(position); };
+
+
+		auto adjusted_scanline = scanline;
+		auto extension_magnitude = decltype(scanline.magnitude){0};
+		const auto beginning_of_extension = adjusted_scanline.start_position.x + adjusted_scanline.magnitude;
+		for (; beginning_of_extension + extension_magnitude <= board_size.width; ++extension_magnitude)
+		{
+			if (is_tile_hot_at(adjusted_scanline.start_position))
+				break;
+		}
+
+		if (extension_magnitude)
+			Cache_New_ScanLine_Next_Row_Reverse_Feed(adjusted_scanline.start_position, extension_magnitude, adjusted_scanline.feed, board_size, fn_cache);
+	}
+
+	bool IsMagnitudeAdjustible(const ScanLine& scanline, const Size2D& board_size, std::function<bool(Pos2D)> fn_get_tile_data)
+	{
+		return scanline.magnitude != 0 && scanline.start_position.x + scanline.magnitude - 1 < board_size.width && fn_get_tile_data({scanline.start_position.x + scanline.magnitude, scanline.start_position.y});
+	}
+
+	void SweepOneScanLine(const ScanLine& scanline,
+
+		const Size2D& board_size,
+		std::function<int(Pos2D)> fn_get_tile_data,
+		std::function<bool(const Pos2D&)> fn_clear_tile_at,
+		std::function<void(const ScanLine&)> fn_cache_scanline)
+	{
+		// Simplifying function calls for better readability
+		auto cache = [&](const ScanLine& scan_line) { CacheNextScanline(scan_line, board_size, fn_cache_scanline); };
+		auto create_scanline = [&](const Pos2D& start_position, unsigned magnitude, ELineFeed line_feed) { return CreateScanLine(start_position, magnitude, line_feed, board_size); };
+		auto is_start_adjustible = [&](const ScanLine& scanline) { return fn_get_tile_data(scanline.start_position) == 0 && scanline.start_position.x != 0; };
+		auto is_magnitude_adjustible = [&](const ScanLine& scanline) { return IsMagnitudeAdjustible(scanline, board_size, fn_get_tile_data); };
+	
+
+		// ADJUST THE START OF THE SCANLINE
+		// check the value of the starting tile,
+
+		// if the value is zero (not hot) then
+		// scan left until the first hot tile
+		// put the new start at the scanline at
+		// that tile.
+
+		// also put cleared_range to start at the
+		// same tile
+
+		auto adjusted_scanline = scanline;
+	
+		// Adjust start
+		if (is_start_adjustible(scanline))
+			adjusted_scanline = AdjustScanlineStart(adjusted_scanline, board_size, fn_get_tile_data, cache);
+
+		// Adjust magnitude
+		if (is_magnitude_adjustible(scanline))
+			adjusted_scanline = AdjustScanlineMagnitude(adjusted_scanline, board_size, fn_get_tile_data, cache);
+
+		// Scan the the scanline
+		for (auto curr_position = adjusted_scanline.start_position; curr_position.x < adjusted_scanline.magnitude; ++curr_position.x)
+		{
+			// clear the tile at the curren position
+			if (!fn_clear_tile_at(curr_position))
+				break;
+
+
+			// 
+		}
+		
+		
+
+		// SCAN THE 
+	}
+
+
+	void ScanlineSweep(const Size2D& board_size, const Pos2D& start_position,
+		std::function<int(Pos2D)> fn_get_tile_data, std::function<bool(Pos2D)> fn_clear_tile)
+	{
+		// put this code in the caller instead and send a callable to this function fn_clear_tile
+		//auto tiles_status = std::vector <ETileStatus>(tiles_data.size(), ETileStatus::not_cleared);
+		//auto fn_clear_tile = [&](const Pos2D& position) {
+		//	auto offset = GetOffsetIndex(board_size, position);
+		//	if (tiles_status.at(offset) == ETileStatus::not_cleared)
+		//	{
+		//		tiles_status.at(offset) = ETileStatus::cleared;
+		//		return true;
+		//	}
+		//	return false;
+		//};
+
+		auto unhandled_scanlines = std::vector <ScanLine>{};
+		auto fn_cache_scanline = [&](const ScanLine& scanline) { unhandled_scanlines.push_back(scanline); };
+
+		// create the first scanline to start with
+		auto starting_scanline = ScanLine{};
+		starting_scanline.start_position = start_position;
+		starting_scanline.magnitude = 1; // one tile
+
+		// simplify calling to sweep
+		auto sweep = [&](const ScanLine& scanline) { SweepOneScanLine(scanline, fn_get_tile_data, fn_clear_tile, fn_cache_scanline); };
+
+		// sweep the first line
+		sweep(starting_scanline);
+
+		while (!unhandled_scanlines.empty())
+		{
+			const auto curr_scanline = unhandled_scanlines.back();
+			unhandled_scanlines.pop_back();
+			sweep(curr_scanline);
+		}
+	}
 }
 
-
-void kms::ScanlineSweep(const Size2D& board_size, const Pos2D& start_position, const kms::TilesVector_t& tiles, std::function<bool(unsigned)> fn_is_cleared, std::function<void(const ClearedRange&)> fn_report_clear_range)
+void kms::ScanlineSweep_OLD_(const Size2D& board_size, const Pos2D& start_position, const kms::TilesVector_t& tiles, 
+	std::function<bool(unsigned)> fn_is_cleared, std::function<void(const ClearedRange&)> fn_report_clear_range)
 {
 	const auto start_offset = GetOffsetIndex(board_size, start_position);
 	const auto beg_of_line_offset = GetOffsetIndex(board_size, {0, start_position.y});
@@ -210,7 +416,7 @@ void kms::ScanlineSweep(const Size2D& board_size, const Pos2D& start_position, c
 	};
 
 	// initial scan line
-	auto init_scan_line = ScanLine{ start_position, 1, LineFeed::undefiend };
+	auto init_scan_line = ScanLine{ start_position, 1, ELineFeed::undefiend };
 
 
 	auto clear_range = Scan(init_scan_line, board_size, tiles, fn_report_scan_line);

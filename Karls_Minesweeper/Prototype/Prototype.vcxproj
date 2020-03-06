@@ -152,6 +152,7 @@
     <ClCompile Include="ScanlineSweep.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FloodFill.h" />
     <ClInclude Include="Minesweep_Basics.h" />
     <ClInclude Include="ScanlineSweep.h" />
   </ItemGroup>
