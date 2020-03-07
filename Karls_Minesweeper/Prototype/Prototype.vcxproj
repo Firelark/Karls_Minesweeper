@@ -148,6 +148,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Minesweep_Basics.cpp" />
+    <ClCompile Include="OLDscanline.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="Prototype.cpp" />
     <ClCompile Include="ScanlineSweep.cpp" />
   </ItemGroup>

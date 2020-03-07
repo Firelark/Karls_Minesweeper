@@ -161,9 +161,9 @@ namespace kms
 
         do
         {
-            std::cout << "Enter x position: ";
+            std::cout << "Enter x position (0-15): ";
             std::cin >> pos.x;
-            std::cout << "Enter y position: ";
+            std::cout << "Enter y position (0-15): ";
             std::cin >> pos.y;
 
             std::cin.clear();
@@ -178,30 +178,36 @@ namespace kms
         return pos;
     }
 
-    void Play(const Size2D& board_size, const kms::TilesVector_t& tiles)
+    void Play(const Size2D& board_size, const kms::TilesVector_t& tiles_data)
     {
         using tile_state_t = uint16_t;
 
-        if (tiles.size() > std::numeric_limits<tile_state_t>::max())
+        if (tiles_data.size() > std::numeric_limits<tile_state_t>::max())
             throw(std::domain_error("Too many tiles!"));
 
-        std::vector<tile_state_t> tile_states(tiles.size(), 0);
+		auto tiles_status = std::vector <int>(tiles_data.size(), 0);
+		auto fn_clear_tile = [&](const Pos2D& position) {
+			auto offset = GetOffsetIndex(board_size, position);
+			if (tiles_status.at(offset) == 0)
+			{
+				tiles_status.at(offset) = 1;
+				return true;
+			}
+			return false;
+		};
 
-        auto fn_is_cleared = [&](unsigned offset) { 
-            return tile_states.at(offset) != 0;
+        auto fn_get_tile_data = [&](const Pos2D& position) {
+            auto offset = GetOffsetIndex(board_size, position);
+            return tiles_data.at(offset);
         };
 
-
-        auto fn_report_clear_range = [&](const ClearedRange& cleared_range) {
-            auto begin = tile_states.begin() + cleared_range.begin;
-            auto end = tile_states.begin() + cleared_range.end;
-            std::fill(begin, end, 1);
-        };
 
         system("cls");
-        PrintBoard_VisitedTiles(board_size, tiles.begin(), tiles.end(), tile_states.begin(), tile_states.end());
+        std::cout << "Player Board:\n";
+        PrintBoard_VisitedTiles(board_size, tiles_data.begin(), tiles_data.end(), tiles_status.begin(), tiles_status.end());
         std::cout << "\n------------------------------------\n";
-        PrintBoard(board_size, tiles.begin(), tiles.end());
+        std::cout << "Board behind the tiles (for debuggning!)\n";
+        PrintBoard(board_size, tiles_data.begin(), tiles_data.end());
 
         bool game_over = false;
 
@@ -209,22 +215,24 @@ namespace kms
         {
             auto position = GetPosition(board_size);
 
-            ScanlineSweep(board_size, position, tiles, fn_is_cleared, fn_report_clear_range);
+            ScanlineSweep(board_size, position, fn_get_tile_data, fn_clear_tile);
 
-            auto tile_value = StepOnTile(board_size, position, tiles);
+            auto tile_value = StepOnTile(board_size, position, tiles_data);
 
             if (tile_value == mine_value)
             {
                 game_over = true;
                 std::cout << "Game Over!\n";
-                PrintBoard(board_size, tiles.begin(), tiles.end());
+                PrintBoard(board_size, tiles_data.begin(), tiles_data.end());
                 return;
             }
 
             system("cls");
-            PrintBoard_VisitedTiles(board_size, tiles.begin(), tiles.end(), tile_states.begin(), tile_states.end());
+            std::cout << "Player Board:\n";
+            PrintBoard_VisitedTiles(board_size, tiles_data.begin(), tiles_data.end(), tiles_status.begin(), tiles_status.end());
             std::cout << "\n------------------------------------\n";
-            PrintBoard(board_size, tiles.begin(), tiles.end());
+            std::cout << "Board behind the tiles (for debuggning!)\n";
+            PrintBoard(board_size, tiles_data.begin(), tiles_data.end());
         }
     }
 }
