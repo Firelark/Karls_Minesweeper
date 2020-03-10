@@ -115,6 +115,29 @@ namespace kms
 		// also record the next_scanline starting at the new start position and have a magnitude equal
 		// to the old_start_position - new_start_position.
 
+
+		if (scanline.magnitude > 1 && scanline.feed != ELineFeed::undefiend)
+		{
+			bool shrink = false;
+			shrink = is_tile_hot_at(Position2D(scanline.start_position.x + 1, scanline.start_position.y));
+			if (scanline.start_position.x != 0 && scanline.start_position.x < board_size.width)
+			{
+				if (scanline.feed == ELineFeed::up)
+					shrink = shrink && is_tile_hot_at(Position2D(scanline.start_position.x, scanline.start_position.y -1));
+				else if (scanline.feed == ELineFeed::up)
+					shrink = shrink && is_tile_hot_at(Position2D(scanline.start_position.x, scanline.start_position.y +1));
+			}
+
+			if (shrink)
+			{
+				auto shrunk_scanline = scanline;
+				shrunk_scanline.start_position.x += 1;
+				shrunk_scanline.magnitude - 1;
+				return shrunk_scanline;
+			}
+		}
+
+
 		auto adjusted_scanline = scanline;
 		auto extension_magnitude = decltype(scanline.magnitude){0};
 		for (; adjusted_scanline.start_position.x > 0; --adjusted_scanline.start_position.x)
@@ -140,16 +163,50 @@ namespace kms
 	{
 		auto is_tile_hot_at = [&](const Pos2D& position) { return fn_get_tile_data(position); };
 
+		auto pos_last_tile_of_scanline = Position2D(scanline.start_position.x + scanline.magnitude - 1, scanline.start_position.y);
+
+		// check if the scanline magnitude should shrink
+		if (scanline.magnitude > 1 && scanline.feed != ELineFeed::undefiend)
+		{
+			bool shrink = false;
+			const auto xpos_at_last_tile_of_row = board_size.width -1;
+			const auto xpos_last_tile_of_scanline = scanline.start_position.x + scanline.magnitude - 1;
+			
+			//if (is_tile_hot_at(Position2D(xpos_last_tile_of_scanline, scanline.start_position.y)) == false)
+			//{
+				shrink = is_tile_hot_at(Position2D(xpos_last_tile_of_scanline -1, scanline.start_position.y));
+
+				// if the last tile of the scanline is not the last tile of the row
+				if (xpos_last_tile_of_scanline == xpos_at_last_tile_of_row)
+				{
+					// also check the last tile on the previous row
+					if (scanline.feed == ELineFeed::up)
+						shrink = shrink && is_tile_hot_at(Position2D(xpos_last_tile_of_scanline, scanline.start_position.y - 1));
+					else if (scanline.feed == ELineFeed::down)
+						shrink = shrink && is_tile_hot_at(Position2D(xpos_last_tile_of_scanline, scanline.start_position.y + 1));
+				}
+			//}
+			
+			if (shrink)
+			{
+				auto shrunk_scanline = scanline;
+				shrunk_scanline.magnitude -= 1; // shrink by one
+				return shrunk_scanline;
+			}
+		}
 
 		auto adjusted_scanline = scanline;
-		auto extension_magnitude = decltype(scanline.magnitude){1};
+		auto extension_magnitude = decltype(scanline.magnitude){0};
 		const auto beginning_of_extension = adjusted_scanline.start_position.x + adjusted_scanline.magnitude;
 		auto curr_position = adjusted_scanline.start_position;
 		curr_position.x = beginning_of_extension;
-		for (; beginning_of_extension + extension_magnitude <= board_size.width; ++extension_magnitude, ++curr_position.x)
+		for (; curr_position.x < board_size.width; ++extension_magnitude, ++curr_position.x)
 		{
 			if (is_tile_hot_at(curr_position))
+			{
+				++extension_magnitude;
 				break;
+			}
 		}
 
 		if (extension_magnitude && adjusted_scanline.feed != ELineFeed::undefiend)
@@ -165,7 +222,10 @@ namespace kms
 
 	bool IsMagnitudeAdjustible(const ScanLine& scanline, const Size2D& board_size, std::function<bool(Pos2D)> fn_get_tile_data)
 	{
-		return scanline.magnitude != 0 && scanline.start_position.x + scanline.magnitude - 1 < board_size.width && fn_get_tile_data({scanline.start_position.x + scanline.magnitude -1, scanline.start_position.y}) == 0;
+		auto is_not_last_tile_in_row = [&]() { return scanline.start_position.x + scanline.magnitude - 1 < board_size.width; };
+		auto is_last_tile_blank = [&]() { return fn_get_tile_data({ scanline.start_position.x + scanline.magnitude - 1, scanline.start_position.y }) == 0;  };
+
+		return scanline.magnitude != 0 && is_not_last_tile_in_row() && is_last_tile_blank();
 	}
 
 	void SweepOneScanLine(const ScanLine& scanline,
@@ -200,32 +260,44 @@ namespace kms
 			adjusted_scanline = AdjustScanlineStart(adjusted_scanline, board_size, fn_get_tile_data, cache);
 
 		// Adjust magnitude
-		if (is_magnitude_adjustible(scanline))
+		if (is_magnitude_adjustible(adjusted_scanline))
 			adjusted_scanline = AdjustScanlineMagnitude(adjusted_scanline, board_size, fn_get_tile_data, cache);
 
 		bool recording = true;
 		bool reset = false;
 		auto next_scanline = adjusted_scanline;
-		next_scanline.magnitude = 1;
+		next_scanline.magnitude = 0;
+		const auto xend_of_scanline = adjusted_scanline.start_position.x + adjusted_scanline.magnitude;
 
 		// Scan the the scanline
-		for (auto curr_position = adjusted_scanline.start_position; curr_position.x < adjusted_scanline.magnitude; ++curr_position.x, ++next_scanline.magnitude)
+		for (auto curr_position = adjusted_scanline.start_position; curr_position.x < xend_of_scanline; ++curr_position.x, ++next_scanline.magnitude)
 		{
 			// clear the tile at the curren position, if this function return false the tile has already been cleared
 			// so the next scanline should be aborted
 			if (fn_clear_tile_at(curr_position))
 			{
-				if (is_hot(curr_position))
+				if (reset)
+				{
+					next_scanline.start_position = curr_position;
+					next_scanline.magnitude = 1;
+					reset = false;
+				}
+
+				if (is_hot(curr_position) || curr_position.x == board_size.width -1)
 				{ 
 					if (recording)
 					{
-						CacheScanLine_NextRow(next_scanline, board_size, cache);
+						if(next_scanline.magnitude) // not allowing
+						{ 
+							++next_scanline.magnitude; // one beyond the hot tile
+							CacheScanLine_NextRow(next_scanline, board_size, cache);
+						}
 						reset = false;
 						recording = false;
 					}
 
 					next_scanline.start_position = curr_position;
-					next_scanline.magnitude = 1;
+					next_scanline.magnitude = 0;
 				}
 				else if(reset == false && recording == false)
 				{

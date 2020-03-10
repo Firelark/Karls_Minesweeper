@@ -26,6 +26,35 @@ namespace kms
 		unsigned y = 0;
 	};
     
+	inline Pos2D Position2D(unsigned xPos, unsigned yPos)
+	{
+		return {xPos, yPos};
+	}
+
+	inline Pos2D operator+(const Pos2D& l, const Pos2D r)
+	{
+		return Position2D(l.x + r.x, l.y + r.y);
+	}
+
+	inline Pos2D operator-(const Pos2D& l, const Pos2D r)
+	{
+		return Position2D(l.x - r.x, l.y - r.y);
+	}
+
+	inline Pos2D& operator+=(Pos2D& l, const Pos2D& r)
+	{
+		l.x += r.x;
+		l.y += r.y;
+		return l;
+	}
+
+	inline Pos2D& operator-=(Pos2D& l, const Pos2D r)
+	{
+		l.x -= r.x;
+		l.y -= r.y;
+		return l;
+	}
+
 	inline unsigned GetOffsetIndex(const Size2D& board_size, const Pos2D& position)
     {
         auto offset = position.y * board_size.width + position.x;
